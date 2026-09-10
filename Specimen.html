@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Generative Halftone / Screenprint Studio</title>
+
+  <!-- LIBRERÍAS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.6/p5.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #111111;
+      --panel: #191919;
+      --panel2: #222222;
+      --border: #363636;
+      --text: #eeeeee;
+      --muted: #999999;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, Helvetica, Arial, sans-serif;
+    }
+
+    body { overflow-x: hidden; }
+
+    #app {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      min-height: 100vh;
+    }
+
+    #controls {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 18px;
+      overflow-y: auto;
+      max-height: 100vh;
+    }
+
+    #canvas-wrap {
+      min-width: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 30px;
+      background: radial-gradient(circle at center, #242424 0, #151515 55%, #101010 100%);
+    }
+
+    canvas {
+      display: block;
+      max-width: 100%;
+      max-height: calc(100vh - 60px);
+      height: auto !important;
+      width: auto !important;
+      box-shadow: 0 20px 70px rgba(0, 0, 0, 0.45);
+    }
+
+    h1 { font-size: 18px; margin: 0 0 5px; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); font-size: 11px; line-height: 1.5; margin-bottom: 18px; }
+    .section { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 15px; }
+    .section-title { text-transform: uppercase; font-size: 10px; letter-spacing: 0.12em; color: #aaa; margin-bottom: 10px; }
+    .control { margin-bottom: 11px; }
+
+    label { display: block; font-size: 11px; margin-bottom: 5px; color: #d0d0d0; }
+
+    select, input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--panel2);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 8px;
+      outline: none;
+      font-size: 12px;
+    }
+
+    input[type="file"] { width: 100%; font-size: 10px; color: #aaa; }
+    input[type="range"] { width: 100%; accent-color: white; }
+    
+    .value-input {
+      float: right;
+      color: #ffffff;
+      font-family: monospace;
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-size: 11px;
+      width: 55px;
+      text-align: right;
+      outline: none;
+    }
+    .value-input:focus { border-color: #888; }
+
+    .color-picker-wrap {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    input[type="color"] {
+      width: 36px;
+      height: 32px;
+      padding: 0;
+      border: 1px solid var(--border);
+      background: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    button {
+      width: 100%;
+      border: 1px solid #555;
+      background: #eeeeee;
+      color: #111;
+      border-radius: 4px;
+      padding: 9px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-bottom: 7px;
+    }
+
+    button:hover { background: white; }
+    button.secondary { background: #242424; color: white; border-color: #444; }
+    button.secondary:hover { background: #303030; }
+
+    .mode-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .mode-buttons button { margin: 0; background: #222; color: #aaa; border-color: #333; }
+    .mode-buttons button.active { background: #eee; color: #111; }
+
+    #dropzone {
+      border: 1px dashed #555;
+      border-radius: 5px;
+      padding: 14px 10px;
+      text-align: center;
+      color: #888;
+      font-size: 10px;
+      margin-top: 8px;
+    }
+
+    #dropzone.dragover { border-color: white; color: white; background: #252525; }
+    #status { font-size: 10px; line-height: 1.4; color: #777; margin-top: 8px; }
+    .hint { font-size: 9px; line-height: 1.4; color: #666; margin-top: 4px; }
+  </style>
+</head>
+
+<body>
+
+<div id="app">
+  <aside id="controls">
+    <h1>HALFTONE STUDIO</h1>
+    <div class="subtitle">Procesamiento generativo de imagen y tipografía.</div>
+
+    <!-- CONFIGURACIÓN JSON -->
+    <div class="section" style="border-top:none; padding-top:0;">
+      <div class="section-title">Ajustes / Preset</div>
+      <div class="row">
+        <button id="savePresetBtn" class="secondary">Guardar Config</button>
+        <button id="loadPresetBtn" class="secondary">Cargar Config</button>
+      </div>
+      <input id="presetFileInput" type="file" accept=".json" style="display:none;" />
+    </div>
+
+    <!-- INPUT -->
+    <div class="section">
+      <div class="section-title">Input</div>
+      <div class="mode-buttons">
+        <button id="modeImage" class="active">Imagen</button>
+        <button id="modeText">Texto</button>
+      </div>
+
+      <div id="imageControls" style="margin-top:12px;">
+        <div class="control">
+          <label>Imagen JPG / PNG</label>
+          <input id="imageFile" type="file" accept="image/png,image/jpeg" />
+        </div>
+        <div id="dropzone">Arrastra una imagen aquí</div>
+      </div>
+
+      <div id="textControls" style="display:none; margin-top:12px;">
+        <div class="control">
+          <label>Fuente TTF / OTF</label>
+          <input id="fontFile" type="file" accept=".ttf,.otf" />
+        </div>
+        <div class="control">
+          <label>Texto</label>
+          <input id="textInput" type="text" value="HALFTONE" />
+        </div>
+        <div class="control">
+          <label>Tamaño <input class="value-input" id="fontSizeValue" type="number" step="1"></label>
+          <input id="fontSize" type="range" min="20" max="500" value="180" />
+        </div>
+        <div class="control">
+          <label>Interlineado <input class="value-input" id="leadingValue" type="number" step="0.01"></label>
+          <input id="leading" type="range" min="0.5" max="2" step="0.01" value="1" />
+        </div>
+        <div class="control">
+          <label>Tracking <input class="value-input" id="trackingValue" type="number" step="1"></label>
+          <input id="tracking" type="range" min="-20" max="100" value="0" />
+        </div>
+        <div class="control">
+          <label>Alineación</label>
+          <select id="textAlign">
+            <option value="left">Izquierda</option>
+            <option value="center" selected>Centro</option>
+            <option value="right">Derecha</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- HALFTONE -->
+    <div class="section">
+      <div class="section-title">Halftone</div>
+      <div class="control">
+        <label>Modo</label>
+        <select id="halftoneMode">
+          <option value="am">AM — Escala de Tamaño</option>
+          <option value="density">Densidad — Tamaño Fijo</option>
+          <option value="lines">Líneas / Tramas</option>
+        </select>
+      </div>
+      <div class="control">
+        <label>Grid / Celda <input class="value-input" id="gridValue" type="number" step="1"></label>
+        <input id="gridSize" type="range" min="3" max="60" value="12" />
+      </div>
+      <div class="control">
+        <label>Threshold <input class="value-input" id="thresholdValue" type="number" step="1"></label>
+        <input id="threshold" type="range" min="0" max="255" value="128" />
+      </div>
+      <div class="control">
+        <label>Contraste <input class="value-input" id="contrastValue" type="number" step="1"></label>
+        <input id="contrast" type="range" min="-100" max="100" value="0" />
+      </div>
+      <div class="row">
+        <div class="control">
+          <label>Black Point <input class="value-input" id="blackPointValue" type="number" step="1"></label>
+          <input id="blackPoint" type="range" min="0" max="120" value="0" />
+        </div>
+        <div class="control">
+          <label>White Point <input class="value-input" id="whitePointValue" type="number" step="1"></label>
+          <input id="whitePoint" type="range" min="135" max="255" value="255" />
+        </div>
+      </div>
+    </div>
+
+    <!-- PUNTOS -->
+    <div class="section">
+      <div class="section-title">Puntos / Formas</div>
+      <div class="control">
+        <label>Tamaño mínimo <input class="value-input" id="minDotValue" type="number" step="0.25"></label>
+        <input id="minDot" type="range" min="0" max="20" step="0.25" value="1" />
+      </div>
+      <div class="control">
+        <label>Tamaño máximo <input class="value-input" id="maxDotValue" type="number" step="0.25"></label>
+        <input id="maxDot" type="range" min="1" max="60" step="0.25" value="12" />
+      </div>
+      <div class="control">
+        <label>Forma</label>
+        <select id="dotShape">
+          <option value="circle">Círculo</option>
+          <option value="square">Cuadrado</option>
+          <option value="line">Línea</option>
+          <option value="cross">Cruz</option>
+          <option value="ellipse">Elipse</option>
+        </select>
+      </div>
+      <div class="control">
+        <label>Opacidad óptica <input class="value-input" id="opticalValue" type="number" step="1"></label>
+        <input id="optical" type="range" min="0" max="200" value="100" />
+      </div>
+      <div class="control">
+        <label>Invertir tonos</label>
+        <select id="invert">
+          <option value="false">Positivo</option>
+          <option value="true">Negativo</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- COLOR HEX -->
+    <div class="section">
+      <div class="section-title">Color (HEX)</div>
+      <div class="row">
+        <div class="control">
+          <label>Fondo</label>
+          <div class="color-picker-wrap">
+            <input id="bgColor" type="color" value="#f2f0e8" />
+            <input id="bgColorHex" type="text" value="#f2f0e8" maxlength="7" />
+          </div>
+        </div>
+        <div class="control">
+          <label>Tinta</label>
+          <div class="color-picker-wrap">
+            <input id="inkColor" type="color" value="#111111" />
+            <input id="inkColorHex" type="text" value="#111111" maxlength="7" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXPORT -->
+    <div class="section">
+      <div class="section-title">Export</div>
+      <button id="exportSVG">EXPORTAR SVG</button>
+      <button id="savePNG" class="secondary">GUARDAR PNG (ALTA RES)</button>
+      <div id="status">Listo.</div>
+    </div>
+  </aside>
+
+  <main id="canvas-wrap"></main>
+</div>
+
+<script>
+let state = {
+  inputMode: "image",
+  sourceImage: null,
+  sourceBuffer: null,
+  customFont: null,
+  fontName: "sans-serif",
+  processingW: 1000,
+  processingH: 700,
+  dirty: true,
+  bufferDirty: true,
+  values: {}
+};
+
+const DEFAULT_TEXT = "HALFTONE";
+let uiElements = {};
+let renderTimeout = null;
+
+const rangeInputs = [
+  { id: "gridSize", valId: "gridValue" },
+  { id: "threshold", valId: "thresholdValue" },
+  { id: "contrast", valId: "contrastValue" },
+  { id: "blackPoint", valId: "blackPointValue" },
+  { id: "whitePoint", valId: "whitePointValue" },
+  { id: "minDot", valId: "minDotValue" },
+  { id: "maxDot", valId: "maxDotValue" },
+  { id: "optical", valId: "opticalValue" },
+  { id: "fontSize", valId: "fontSizeValue" },
+  { id: "leading", valId: "leadingValue" },
+  { id: "tracking", valId: "trackingValue" }
+];
+
+function setup() {
+  const c = createCanvas(1000, 700);
+  c.parent("canvas-wrap");
+  pixelDensity(1);
+  noLoop(); 
+
+  cacheUIElements();
+  setupUI();
+  syncAllInputsFromSliders();
+  updateUIValues();
+  createSourceBuffer();
+  requestRedraw();
+}
+
+function cacheUIElements() {
+  const ids = [
+    "halftoneMode", "gridSize", "threshold", "contrast",
+    "blackPoint", "whitePoint", "minDot", "maxDot", "dotShape",
+    "optical", "invert", "bgColor", "inkColor", "bgColorHex", "inkColorHex",
+    "fontSize", "leading", "tracking", "textAlign", "textInput"
+  ];
+  ids.forEach(id => {
+    uiElements[id] = document.getElementById(id);
+  });
+}
+
+function draw() {
+  if (!state.dirty) return;
+
+  if (state.bufferDirty) {
+    createSourceBuffer();
+    state.bufferDirty = false;
+  }
+
+  if (!state.sourceBuffer) {
+    background(state.values.bgColor || "#f2f0e8");
+    drawEmptyState();
+    state.dirty = false;
+    return;
+  }
+
+  renderHalftoneToTarget(this);
+  state.dirty = false;
+}
+
+function requestRedraw(debounceTime = 0) {
+  state.dirty = true;
+  if (debounceTime > 0) {
+    if (renderTimeout) clearTimeout(renderTimeout);
+    renderTimeout = setTimeout(() => redraw(), debounceTime);
+  } else {
+    redraw();
+  }
+}
+
+function drawEmptyState() {
+  push();
+  background(state.values.bgColor || "#f2f0e8");
+  fill(state.values.inkColor || "#111111");
+  noStroke();
+  textAlign(CENTER, CENTER);
+  textSize(18);
+  text("Carga una imagen o cambia a modo Texto", width / 2, height / 2);
+  pop();
+}
+
+function setupUI() {
+  // Modos de entrada
+  const imageButton = select("#modeImage");
+  const textButton = select("#modeText");
+
+  imageButton.mousePressed(() => {
+    state.inputMode = "image";
+    imageButton.addClass("active");
+    textButton.removeClass("active");
+    select("#imageControls").style("display", "block");
+    select("#textControls").style("display", "none");
+    state.bufferDirty = true;
+    requestRedraw();
+  });
+
+  textButton.mousePressed(() => {
+    state.inputMode = "text";
+    textButton.addClass("active");
+    imageButton.removeClass("active");
+    select("#imageControls").style("display", "none");
+    select("#textControls").style("display", "block");
+    state.bufferDirty = true;
+    requestRedraw();
+  });
+
+  // Carga de Archivos
+  select("#imageFile").changed(function () {
+    const file = this.elt.files[0];
+    if (!file || !file.type.match(/^image\//)) return;
+    loadImage(URL.createObjectURL(file), img => {
+      state.sourceImage = img;
+      fitSourceDimensions(img.width, img.height);
+      state.bufferDirty = true;
+      setStatus(`Imagen cargada: ${img.width} × ${img.height}`);
+      requestRedraw();
+    });
+  });
+
+  const dropzone = document.getElementById("dropzone");
+  dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+  dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.classList.remove("dragover");
+    const file = e.dataTransfer.files[0];
+    if (!file || !file.type.match(/^image\//)) return;
+    loadImage(URL.createObjectURL(file), img => {
+      state.sourceImage = img;
+      fitSourceDimensions(img.width, img.height);
+      state.bufferDirty = true;
+      setStatus("Imagen cargada por drag & drop.");
+      requestRedraw();
+    });
+  });
+
+  select("#fontFile").changed(function () {
+    const file = this.elt.files[0];
+    if (!file) return;
+    loadFont(URL.createObjectURL(file), font => {
+      state.customFont = font;
+      state.fontName = file.name;
+      setStatus("Fuente cargada: " + file.name);
+      state.bufferDirty = true;
+      requestRedraw();
+    });
+  });
+
+  // Eventos de Entradas Numéricas e Incrementos
+  rangeInputs.forEach(({ id, valId }) => {
+    const rangeEl = document.getElementById(id);
+    const numEl = document.getElementById(valId);
+
+    rangeEl.addEventListener("input", () => {
+      numEl.value = rangeEl.value;
+      onParamChange(id);
+    });
+
+    numEl.addEventListener("input", () => {
+      if (numEl.value !== "") {
+        rangeEl.value = numEl.value;
+        onParamChange(id);
+      }
+    });
+
+    numEl.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const step = parseFloat(numEl.step) || 1;
+        let val = parseFloat(numEl.value) || 0;
+        val = e.key === "ArrowUp" ? val + step : val - step;
+        
+        const min = parseFloat(rangeEl.min);
+        const max = parseFloat(rangeEl.max);
+        if (!isNaN(min)) val = Math.max(min, val);
+        if (!isNaN(max)) val = Math.min(max, val);
+
+        numEl.value = val;
+        rangeEl.value = val;
+        onParamChange(id);
+      }
+    });
+  });
+
+  // Sincronía de Color HEX
+  setupColorSync("bgColor", "bgColorHex");
+  setupColorSync("inkColor", "inkColorHex");
+
+  // Selects & Texto
+  ["#halftoneMode", "#dotShape", "#invert", "#textAlign"].forEach(id => {
+    select(id).changed(() => onParamChange());
+  });
+
+  select("#textInput").input(() => {
+    updateUIValues();
+    state.bufferDirty = true;
+    requestRedraw(15);
+  });
+
+  // Exportar y Guardar Presets
+  select("#savePresetBtn").mousePressed(savePreset);
+  select("#loadPresetBtn").mousePressed(() => document.getElementById("presetFileInput").click());
+  select("#presetFileInput").changed(loadPreset);
+
+  select("#exportSVG").mousePressed(exportSVG);
+  select("#savePNG").mousePressed(exportHighResPNG);
+}
+
+function setupColorSync(pickerId, hexId) {
+  const picker = document.getElementById(pickerId);
+  const hex = document.getElementById(hexId);
+
+  picker.addEventListener("input", () => {
+    hex.value = picker.value.toUpperCase();
+    onParamChange();
+  });
+
+  hex.addEventListener("input", () => {
+    if (/^#[0-9A-F]{6}$/i.test(hex.value)) {
+      picker.value = hex.value;
+      onParamChange();
+    }
+  });
+}
+
+function syncAllInputsFromSliders() {
+  rangeInputs.forEach(({ id, valId }) => {
+    document.getElementById(valId).value = document.getElementById(id).value;
+  });
+}
+
+function onParamChange(id) {
+  updateUIValues();
+  if (["fontSize", "leading", "tracking"].includes(id)) {
+    state.bufferDirty = true;
+    requestRedraw(15);
+  } else {
+    requestRedraw(0);
+  }
+}
+
+function updateUIValues() {
+  state.values = {
+    mode: uiElements.halftoneMode.value,
+    grid: Number(uiElements.gridSize.value),
+    threshold: Number(uiElements.threshold.value),
+    contrast: Number(uiElements.contrast.value),
+    blackPoint: Number(uiElements.blackPoint.value),
+    whitePoint: Number(uiElements.whitePoint.value),
+    minDot: Number(uiElements.minDot.value),
+    maxDot: Number(uiElements.maxDot.value),
+    shape: uiElements.dotShape.value,
+    optical: Number(uiElements.optical.value) / 100,
+    invert: uiElements.invert.value === "true",
+    bgColor: uiElements.bgColorHex.value,
+    inkColor: uiElements.inkColorHex.value,
+    fontSize: Number(uiElements.fontSize.value),
+    leading: Number(uiElements.leading.value),
+    tracking: Number(uiElements.tracking.value),
+    textAlign: uiElements.textAlign.value
+  };
+}
+
+function fitSourceDimensions(w, h) {
+  const MAX = 1200;
+  const scale = Math.min(1, MAX / Math.max(w, h));
+  state.processingW = Math.max(1, Math.round(w * scale));
+  state.processingH = Math.max(1, Math.round(h * scale));
+  resizeCanvas(state.processingW, state.processingH);
+}
+
+function createSourceBuffer() {
+  if (state.inputMode === "image" && !state.sourceImage) {
+    state.sourceBuffer = null;
+    return;
+  }
+
+  const w = state.processingW;
+  const h = state.processingH;
+
+  if (!state.sourceBuffer || state.sourceBuffer.width !== w || state.sourceBuffer.height !== h) {
+    state.sourceBuffer = createGraphics(w, h);
+    state.sourceBuffer.pixelDensity(1);
+  }
+
+  const g = state.sourceBuffer;
+  g.background(255);
+
+  if (state.inputMode === "text") {
+    g.noStroke();
+    g.fill(0);
+    g.textFont(state.customFont || "Helvetica");
+    g.textSize(state.values.fontSize || 180);
+    g.textLeading((state.values.fontSize || 180) * (state.values.leading || 1));
+    renderTrackedText(g);
+  } else if (state.inputMode === "image" && state.sourceImage) {
+    g.image(state.sourceImage, 0, 0, w, h);
+  }
+
+  g.loadPixels();
+}
+
+function renderTrackedText(g) {
+  const textValue = uiElements.textInput.value || DEFAULT_TEXT;
+  const fontSize = state.values.fontSize || 180;
+  const tracking = state.values.tracking || 0;
+  const leading = fontSize * (state.values.leading || 1);
+  const align = state.values.textAlign || "center";
+  const lines = textValue.split("\n");
+
+  let y = g.height / 2 - ((lines.length - 1) * leading) / 2;
+
+  lines.forEach(line => {
+    const widths = [];
+    let totalWidth = 0;
+
+    for (let i = 0; i < line.length; i++) {
+      const charWidth = g.textWidth(line[i]);
+      widths.push(charWidth);
+      totalWidth += charWidth + (i < line.length - 1 ? tracking : 0);
+    }
+
+    let x = align === "center" ? (g.width - totalWidth) / 2 : (align === "right" ? g.width - totalWidth : 0);
+
+    for (let i = 0; i < line.length; i++) {
+      g.text(line[i], x, y);
+      x += widths[i] + tracking;
+    }
+    y += leading;
+  });
+}
+
+function renderHalftoneToTarget(target) {
+  if (!state.sourceBuffer) return;
+  const s = state.values;
+
+  target.background(s.bgColor);
+  target.fill(s.inkColor);
+  target.noStroke();
+
+  const grid = s.grid;
+  const pixels = state.sourceBuffer.pixels;
+  const bufW = state.sourceBuffer.width;
+  const bufH = state.sourceBuffer.height;
+
+  const contrastFactor = (259 * (s.contrast + 255)) / (255 * (259 - s.contrast));
+  const threshOffset = 128 - s.threshold;
+
+  for (let y = 0; y < bufH; y += grid) {
+    for (let x = 0; x < bufW; x += grid) {
+      const px = Math.min(x, bufW - 1);
+      const py = Math.min(y, bufH - 1);
+      const idx = (py * bufW + px) * 4;
+
+      const lum = 0.299 * pixels[idx] + 0.587 * pixels[idx + 1] + 0.114 * pixels[idx + 2];
+
+      let t = (lum - s.blackPoint) * (255 / (s.whitePoint - s.blackPoint));
+      t = contrastFactor * (t - 128) + 128 + threshOffset;
+      if (t < 0) t = 0; else if (t > 255) t = 255;
+
+      let darkness = 1 - t / 255;
+      if (s.invert) darkness = 1 - darkness;
+
+      darkness *= s.optical;
+      if (darkness <= 0.01) continue;
+
+      const cx = x + grid / 2;
+      const cy = y + grid / 2;
+
+      // COMPORTAMIENTO POR MODOS
+      if (s.mode === "density") {
+        if (darkness < 0.5) continue;
+        drawShape(target, s.shape, cx, cy, s.maxDot, grid);
+      } else if (s.mode === "lines") {
+        target.stroke(s.inkColor);
+        target.strokeWeight(map(darkness, 0, 1, s.minDot, s.maxDot));
+        target.line(x, cy, x + grid, cy);
+        target.noStroke();
+      } else {
+        // Modo AM (por defecto)
+        const dotSize = map(darkness, 0, 1, s.minDot, s.maxDot);
+        drawShape(target, s.shape, cx, cy, dotSize, grid);
+      }
+    }
+  }
+}
+
+function drawShape(target, shape, cx, cy, dotSize, grid) {
+  if (shape === "circle") {
+    target.circle(cx, cy, dotSize);
+  } else if (shape === "square") {
+    target.rectMode(CENTER);
+    target.rect(cx, cy, dotSize, dotSize);
+  } else if (shape === "line") {
+    target.stroke(state.values.inkColor);
+    target.strokeWeight(dotSize);
+    target.line(cx - grid / 2, cy, cx + grid / 2, cy);
+    target.noStroke();
+  } else if (shape === "cross") {
+    target.stroke(state.values.inkColor);
+    target.strokeWeight(Math.max(1, dotSize * 0.3));
+    target.line(cx - dotSize / 2, cy, cx + dotSize / 2, cy);
+    target.line(cx, cy - dotSize / 2, cx, cy + dotSize / 2);
+    target.noStroke();
+  } else if (shape === "ellipse") {
+    target.ellipse(cx, cy, dotSize, dotSize * 0.5);
+  }
+}
+
+// EXPORTAR PNG DE ALTA RESOLUCIÓN
+function exportHighResPNG() {
+  setStatus("Generando PNG de alta resolución...");
+  setTimeout(() => {
+    const scaleFactor = 3; // Multiplicador de escala (3x resolución)
+    const hiRes = createGraphics(width * scaleFactor, height * scaleFactor);
+    hiRes.scale(scaleFactor);
+    renderHalftoneToTarget(hiRes);
+    save(hiRes, "halftone_high_res", "png");
+    hiRes.remove();
+    setStatus("PNG de alta resolución guardado.");
+  }, 30);
+}
+
+// EXPORTAR SVG
+function exportSVG() {
+  setStatus("Generando SVG...");
+  setTimeout(() => {
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
+    svg += `<rect width="100%" height="100%" fill="${state.values.bgColor}"/>`;
+    svg += `<g fill="${state.values.inkColor}">`;
+
+    const grid = state.values.grid;
+    const pixels = state.sourceBuffer.pixels;
+    const bufW = state.sourceBuffer.width;
+    const bufH = state.sourceBuffer.height;
+    const s = state.values;
+    const contrastFactor = (259 * (s.contrast + 255)) / (255 * (259 - s.contrast));
+    const threshOffset = 128 - s.threshold;
+
+    for (let y = 0; y < bufH; y += grid) {
+      for (let x = 0; x < bufW; x += grid) {
+        const px = Math.min(x, bufW - 1);
+        const py = Math.min(y, bufH - 1);
+        const idx = (py * bufW + px) * 4;
+
+        const lum = 0.299 * pixels[idx] + 0.587 * pixels[idx + 1] + 0.114 * pixels[idx + 2];
+        let t = (lum - s.blackPoint) * (255 / (s.whitePoint - s.blackPoint));
+        t = contrastFactor * (t - 128) + 128 + threshOffset;
+        if (t < 0) t = 0; else if (t > 255) t = 255;
+
+        let darkness = 1 - t / 255;
+        if (s.invert) darkness = 1 - darkness;
+        darkness *= s.optical;
+
+        if (darkness <= 0.01) continue;
+
+        const cx = x + grid / 2;
+        const cy = y + grid / 2;
+        const dotSize = map(darkness, 0, 1, s.minDot, s.maxDot);
+
+        if (s.shape === "circle") {
+          svg += `<circle cx="${cx}" cy="${cy}" r="${dotSize/2}" />`;
+        } else if (s.shape === "square") {
+          svg += `<rect x="${cx - dotSize/2}" y="${cy - dotSize/2}" width="${dotSize}" height="${dotSize}" />`;
+        }
+      }
+    }
+
+    svg += `</g></svg>`;
+
+    const blob = new Blob([svg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "halftone.svg";
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatus("SVG exportado exitosamente.");
+  }, 20);
+}
+
+// GESTIÓN DE CONFIGURACIÓN JSON
+function savePreset() {
+  const config = {
+    inputMode: state.inputMode,
+    text: uiElements.textInput.value,
+    values: state.values
+  };
+  const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "halftone-preset.json";
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus("Configuración guardada.");
+}
+
+function loadPreset(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    try {
+      const config = JSON.parse(event.target.result);
+      if (!config.values) return;
+
+      const v = config.values;
+      uiElements.halftoneMode.value = v.mode || "am";
+      uiElements.gridSize.value = v.grid;
+      uiElements.threshold.value = v.threshold;
+      uiElements.contrast.value = v.contrast;
+      uiElements.blackPoint.value = v.blackPoint;
+      uiElements.whitePoint.value = v.whitePoint;
+      uiElements.minDot.value = v.minDot;
+      uiElements.maxDot.value = v.maxDot;
+      uiElements.dotShape.value = v.shape;
+      uiElements.optical.value = v.optical * 100;
+      uiElements.invert.value = String(v.invert);
+      uiElements.bgColor.value = v.bgColor;
+      uiElements.bgColorHex.value = v.bgColor;
+      uiElements.inkColor.value = v.inkColor;
+      uiElements.inkColorHex.value = v.inkColor;
+      uiElements.fontSize.value = v.fontSize;
+      uiElements.leading.value = v.leading;
+      uiElements.tracking.value = v.tracking;
+      uiElements.textAlign.value = v.textAlign;
+      uiElements.textInput.value = config.text || DEFAULT_TEXT;
+
+      syncAllInputsFromSliders();
+      updateUIValues();
+      state.bufferDirty = true;
+      requestRedraw();
+      setStatus("Configuración cargada con éxito.");
+    } catch (err) {
+      setStatus("Error al leer el archivo JSON.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function setStatus(msg) {
+  const el = document.getElementById("status");
+  if (el) el.textContent = msg;
+}
+</script>
+</body>
+</html>
